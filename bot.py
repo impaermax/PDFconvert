@@ -1,6 +1,8 @@
 import telebot
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import requests
 from io import BytesIO
 from PIL import Image
@@ -8,13 +10,17 @@ import csv
 from datetime import datetime
 
 # Инициализация бота
-bot = telebot.TeleBot("8096350827:AAFDwVRdhemiSSqs5-w6-U6HBpcEO9Y_RDU")  # Замените на свой токен
-ADMIN_ID = 1200223081  # Замените на ваш Telegram ID
-CHANNEL_ID = "@impaermax"  # Замените на ID вашего канала (@username)
+bot = telebot.TeleBot("8096350827:AAFDwVRdhemiSSqs5-w6-U6HBpcEO9Y_RDU")
+ADMIN_ID = 1200223081
+CHANNEL_ID = "@impaermax"
+
+# Регистрация шрифтов с поддержкой кириллицы
+pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))  # Укажите путь к файлу шрифта
+pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', 'DejaVuSans-Bold.ttf'))  # Жирный шрифт
 
 # Глобальные переменные
 user_data = {}  # Для контента PDF
-users_db = {}  # База пользователей
+users_db = {}   # База пользователей
 
 # Создание клавиатуры
 def main_keyboard():
@@ -29,6 +35,7 @@ def admin_keyboard():
     keyboard = telebot.types.ReplyKeyboardMarkup(resize_keyboard=True)
     keyboard.add(telebot.types.KeyboardButton("Рассылка"))
     keyboard.add(telebot.types.KeyboardButton("Выгрузить базу"))
+    keyboard.add(telebot.types.KeyboardButton("Вернуться в главное меню"))
     return keyboard
 
 # Инлайн клавиатура для подписки
@@ -45,12 +52,21 @@ def create_pdf(user_id):
     width, height = letter
     y_position = height - 50
 
+    c.setFont("DejaVuSans", 12)  # Устанавливаем шрифт по умолчанию
+
     for item in user_data[user_id].get('content', []):
-        if isinstance(item, str) and not item.startswith('http'):
-            for line in item.split('\n'):
-                c.drawString(50, y_position, line[:100])
+        if isinstance(item, str) and not item.startswith('http'):  # Текст
+            lines = item.split('\n')
+            for line in lines:
+                if line.strip().startswith('**') and line.strip().endswith('**'):
+                    c.setFont("DejaVuSans-Bold", 12)  # Жирный шрифт
+                    text = line.strip()[2:-2]  # Убираем ** с начала и конца
+                else:
+                    c.setFont("DejaVuSans", 12)  # Обычный шрифт
+                    text = line
+                c.drawString(50, y_position, text[:100])  # Ограничиваем длину строки
                 y_position -= 20
-        elif item.startswith('http'):
+        elif item.startswith('http'):  # Фото по URL
             try:
                 response = requests.get(item)
                 img = Image.open(BytesIO(response.content))
@@ -67,10 +83,12 @@ def create_pdf(user_id):
                 if y_position - img_height < 50:
                     c.showPage()
                     y_position = height - 50
+                    c.setFont("DejaVuSans", 12)  # Восстанавливаем шрифт после новой страницы
                 c.drawImage(temp_img, 50, y_position - img_height, 
                           width=img_width, height=img_height)
                 y_position -= (img_height + 20)
             except Exception as e:
+                c.setFont("DejaVuSans", 12)
                 c.drawString(50, y_position, f"Ошибка загрузки фото: {str(e)}")
                 y_position -= 20
 
@@ -92,7 +110,6 @@ def send_welcome(message):
     user_id = message.from_user.id
     username = message.from_user.username or "No username"
     
-    # Регистрация пользователя
     if user_id not in users_db:
         users_db[user_id] = {
             'username': username,
@@ -102,28 +119,35 @@ def send_welcome(message):
     
     user_data[user_id] = {'content': []}
     
-    if user_id == ADMIN_ID:
-        bot.reply_to(message, "Добро пожаловать, админ!", reply_markup=admin_keyboard())
-    elif check_subscription(user_id):
-        bot.reply_to(message, "Привет! Это сервис для конвертации текста и фото в PDF-формат.\nСоздано by @impaermax (admin - @maks_truestore)\nВыбери, что хочешь сделать:", 
+    if check_subscription(user_id) or user_id == ADMIN_ID:
+        bot.reply_to(message, "Привет! Это сервис для конвертации текста и фото в PDF-формат.\nСоздано by @impaermax (admin - @maks_truestore)\nВыбери, что хочешь сделать:\n\nДля жирного текста используй **текст**\n\nАдмин? Используй /admin", 
                     reply_markup=main_keyboard())
     else:
         bot.reply_to(message, "Привет! Чтобы использовать бота, подпишись на наш канал:", 
                     reply_markup=subscription_keyboard())
+
+# Команда админ-панели
+@bot.message_handler(commands=['admin'])
+def admin_panel(message):
+    user_id = message.from_user.id
+    if user_id == ADMIN_ID:
+        bot.reply_to(message, "Добро пожаловать в админ-панель!", reply_markup=admin_keyboard())
+    else:
+        bot.reply_to(message, "Эта команда доступна только администратору.")
 
 # Обработка проверки подписки
 @bot.callback_query_handler(func=lambda call: call.data == "check_subscription")
 def handle_subscription_check(call):
     user_id = call.from_user.id
     if check_subscription(user_id):
-        bot.edit_message_text("Отлично! Ты подписан. Выбери, что хочешь сделать:", 
+        bot.edit_message_text("Отлично! Ты подписан. Выбери, что хочешь сделать:\n\nДля жирного текста используй **текст**\n\nАдмин? Используй /admin", 
                             call.message.chat.id, call.message.message_id, 
                             reply_markup=main_keyboard())
     else:
         bot.answer_callback_query(call.id, "Ты еще не подписан! Подпишись и проверь снова.")
 
 # Обработка админ-команд
-@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text in ["Рассылка", "Выгрузить базу"])
+@bot.message_handler(func=lambda message: message.from_user.id == ADMIN_ID and message.text in ["Рассылка", "Выгрузить базу", "Вернуться в главное меню"])
 def admin_commands(message):
     if message.text == "Рассылка":
         bot.reply_to(message, "Отправь сообщение для рассылки:")
@@ -137,6 +161,8 @@ def admin_commands(message):
         with open('users_db.csv', 'rb') as f:
             bot.send_document(message.chat.id, f)
         bot.reply_to(message, "База выгружена!", reply_markup=admin_keyboard())
+    elif message.text == "Вернуться в главное меню":
+        bot.reply_to(message, "Возвращаемся в главное меню!", reply_markup=main_keyboard())
 
 def process_broadcast(message):
     for user_id in users_db.keys():
@@ -157,13 +183,13 @@ def handle_buttons(message):
     user_data[user_id] = {'content': []}
     
     if message.text == "Text -> PDF":
-        bot.reply_to(message, "Отправь текст для PDF")
+        bot.reply_to(message, "Отправь текст для PDF (используй **текст** для жирного)")
         bot.register_next_step_handler(message, process_text_only)
     elif message.text == "Photo -> PDF":
         bot.reply_to(message, "Отправь фото или ссылку на фото (можно несколько)")
         bot.register_next_step_handler(message, process_photos_only)
     elif message.text == "Flexible -> PDF":
-        bot.reply_to(message, "Отправляй текст, фото или ссылки в любом порядке. Напиши 'готово', когда закончишь")
+        bot.reply_to(message, "Отправляй текст, фото или ссылки в любом порядке. Для жирного текста используй **текст**. Напиши 'готово', когда закончишь")
         bot.register_next_step_handler(message, process_flexible)
 
 # Обработка текста для Text -> PDF
