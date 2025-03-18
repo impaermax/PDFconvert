@@ -120,7 +120,7 @@ def send_welcome(message):
     user_data[user_id] = {'content': []}
     
     if check_subscription(user_id) or user_id == ADMIN_ID:
-        bot.reply_to(message, "Привет! Это сервис для конвертации текста и фото в PDF-формат.\nСоздано by @impaermax (admin - @maks_truestore)\nВыбери, что хочешь сделать:\n\nДля жирного текста используй **текст**\n\nАдмин? Используй /admin", 
+        bot.reply_to(message, "Привет! Это сервис для конвертации текста и фото в PDF-формат.\n\nСоздано by @impaermax (admin - @maks_truestore)\n\nВыбери, что хочешь сделать:\n", 
                     reply_markup=main_keyboard())
     else:
         bot.reply_to(message, "Привет! Чтобы использовать бота, подпишись на наш канал:", 
@@ -183,13 +183,13 @@ def handle_buttons(message):
     user_data[user_id] = {'content': []}
     
     if message.text == "Text -> PDF":
-        bot.reply_to(message, "Отправь текст для PDF (используй **текст** для жирного)")
+        bot.reply_to(message, "Отправь текст для PDF RU/EN")
         bot.register_next_step_handler(message, process_text_only)
     elif message.text == "Photo -> PDF":
         bot.reply_to(message, "Отправь фото или ссылку на фото (можно несколько)")
         bot.register_next_step_handler(message, process_photos_only)
     elif message.text == "Flexible -> PDF":
-        bot.reply_to(message, "Отправляй текст, фото или ссылки в любом порядке. Для жирного текста используй **текст**. Напиши 'готово', когда закончишь")
+        bot.reply_to(message, "Отправляй текст, фото или ссылки в любом порядке. Выделение **жирным** появится позже. Напиши 'готово', когда закончишь")
         bot.register_next_step_handler(message, process_flexible)
 
 # Обработка текста для Text -> PDF
